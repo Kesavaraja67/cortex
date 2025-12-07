@@ -529,6 +529,99 @@ class CortexCLI:
             traceback.print_exc()
             return 1
 
+    def wizard(self):
+        """Interactive setup wizard for API key configuration"""
+        from pathlib import Path
+
+        show_banner()
+        console.print()
+        cx_print("Welcome to Cortex Setup Wizard!", "success")
+        console.print()
+
+        # Check current API key status
+        is_valid, provider, _ = validate_api_key()
+        if is_valid:
+            cx_print(f"API key already configured ({provider})", "success")
+            console.print()
+            response = input("Do you want to reconfigure? (y/N): ").strip().lower()
+            if response != 'y':
+                cx_print("Configuration unchanged.", "info")
+                return 0
+
+        console.print("[bold]Choose your AI provider:[/bold]")
+        console.print("  1. Anthropic Claude [green](recommended)[/green]")
+        console.print("  2. OpenAI GPT-4")
+        console.print()
+
+        choice = input("Enter choice (1 or 2): ").strip()
+
+        if choice == '1':
+            provider_name = 'ANTHROPIC_API_KEY'
+            console.print()
+            console.print("[dim]Get your key at: https://console.anthropic.com[/dim]")
+        elif choice == '2':
+            provider_name = 'OPENAI_API_KEY'
+            console.print()
+            console.print("[dim]Get your key at: https://platform.openai.com/api-keys[/dim]")
+        else:
+            self._print_error("Invalid choice. Please enter 1 or 2.")
+            return 1
+
+        console.print()
+        api_key = input(f"Enter your {provider_name}: ").strip()
+
+        if not api_key:
+            self._print_error("API key cannot be empty.")
+            return 1
+
+        # Validate key format
+        if provider_name == 'ANTHROPIC_API_KEY' and not api_key.startswith('sk-ant-'):
+            cx_print("Warning: Key doesn't look like an Anthropic key (should start with 'sk-ant-')", "warning")
+        elif provider_name == 'OPENAI_API_KEY' and not api_key.startswith('sk-'):
+            cx_print("Warning: Key doesn't look like an OpenAI key (should start with 'sk-')", "warning")
+
+        # Save to shell profile
+        console.print()
+        console.print("[bold]Where should I save this?[/bold]")
+        console.print("  1. ~/.bashrc")
+        console.print("  2. ~/.zshrc")
+        console.print("  3. ~/.profile")
+        console.print("  4. Just show me the export command")
+        console.print()
+
+        save_choice = input("Enter choice (1-4): ").strip()
+
+        export_line = f'export {provider_name}="{api_key}"'
+
+        if save_choice in ['1', '2', '3']:
+            files = {
+                '1': Path.home() / '.bashrc',
+                '2': Path.home() / '.zshrc',
+                '3': Path.home() / '.profile',
+            }
+            target_file = files[save_choice]
+
+            try:
+                with open(target_file, 'a') as f:
+                    f.write(f'\n# Cortex Linux API key\n{export_line}\n')
+                cx_print(f"Added to {target_file}", "success")
+                console.print()
+                console.print(f"[yellow]Run this to activate now:[/yellow]")
+                console.print(f"  source {target_file}")
+            except Exception as e:
+                self._print_error(f"Could not write to {target_file}: {e}")
+                console.print()
+                console.print("[yellow]Add this line manually:[/yellow]")
+                console.print(f"  {export_line}")
+        else:
+            console.print()
+            console.print("[yellow]Add this to your shell profile:[/yellow]")
+            console.print(f"  {export_line}")
+
+        console.print()
+        cx_print("Setup complete! Try: cortex install docker", "success")
+        return 0
+
     def demo(self):
         """Run a demo showing Cortex capabilities without API key"""
         import time
@@ -598,11 +691,11 @@ def show_rich_help():
     table.add_column("Description")
 
     table.add_row("demo", "See Cortex in action (no API key needed)")
+    table.add_row("wizard", "Configure API key interactively")
     table.add_row("install <pkg>", "Install software using natural language")
     table.add_row("history", "View installation history")
     table.add_row("rollback <id>", "Undo an installation")
     table.add_row("check-pref", "View configuration")
-    table.add_row("wizard", "Configure API key (coming soon)")
 
     console.print(table)
     console.print()
@@ -653,6 +746,9 @@ Environment Variables:
     # Demo command (first - show this to new users)
     demo_parser = subparsers.add_parser('demo', help='See Cortex in action (no API key needed)')
 
+    # Wizard command
+    wizard_parser = subparsers.add_parser('wizard', help='Configure API key interactively')
+
     # Install command
     install_parser = subparsers.add_parser('install', help='Install software using natural language')
     install_parser.add_argument('software', type=str, help='Software to install (natural language)')
@@ -695,6 +791,8 @@ Environment Variables:
     try:
         if args.command == 'demo':
             return cli.demo()
+        elif args.command == 'wizard':
+            return cli.wizard()
         elif args.command == 'install':
             return cli.install(args.software, execute=args.execute, dry_run=args.dry_run)
         elif args.command == 'history':
