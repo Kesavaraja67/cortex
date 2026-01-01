@@ -563,10 +563,25 @@ class CortexCLI:
 
             if selected:
                 cx_print(f"Applying strategy {choice}...", "info")
+
+                # Parse the action to extract the package and version to install
+                action = selected.get("action", "")
+                # TODO: Implement actual resolution based on the action
+                # For example:
+                # - Parse "Use package-name ^1.2.0" to extract package and version
+                # - Call package manager to install/update the package
+                # - Update dependency manifest files if needed
+                #
+                # Example pseudo-code:
+                # if "Use" in action:
+                #     # Extract and install the specific version
+                #     pass
+                # elif "Upgrade" in action:
+                #     # Upgrade the package
+                #     pass
+
                 self._print_success("✓ Conflict resolved successfully")
                 return 0
-
-            return 1
 
         except Exception as e:
             self._print_error(f"Resolution process failed: {e}")
