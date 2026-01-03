@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -17,14 +17,20 @@ class TestCortexCLI(unittest.TestCase):
         self._temp_dir = tempfile.TemporaryDirectory()
         self._temp_home = Path(self._temp_dir.name)
 
+        # GLOBAL FIX: Prevents "Could not determine home directory" globally
+        self.path_patcher = patch("pathlib.Path.home", return_value=self._temp_home)
+        self.path_patcher.start()
+
     def tearDown(self):
+        # Stop the global patch and cleanup temp files
+        self.path_patcher.stop()
         self._temp_dir.cleanup()
 
-    def test_get_api_key_openai(self):
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-openai-key-123"}, clear=True):
-            with patch("pathlib.Path.home", return_value=self._temp_home):
-                api_key = self.cli._get_api_key()
-                self.assertEqual(api_key, "sk-test-openai-key-123")
+    def test_get_api_key_openai(self) -> None:
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key"}, clear=True):
+            # No need for Path.home patch here anymore!
+            api_key = self.cli._get_api_key()
+            self.assertEqual(api_key, "sk-test-key")
 
     def test_get_api_key_claude(self):
         with patch.dict(
@@ -32,35 +38,34 @@ class TestCortexCLI(unittest.TestCase):
             {"ANTHROPIC_API_KEY": "sk-ant-test-claude-key-123", "OPENAI_API_KEY": ""},
             clear=True,
         ):
-            with patch("pathlib.Path.home", return_value=self._temp_home):
-                api_key = self.cli._get_api_key()
-                self.assertEqual(api_key, "sk-ant-test-claude-key-123")
+            # The global patcher in setUp handles the home directory now
+            api_key = self.cli._get_api_key()
+            self.assertEqual(api_key, "sk-ant-test-claude-key-123")
 
     @patch.dict(os.environ, {}, clear=True)
-    @patch("sys.stderr")  # Suppress error output during test
-    def test_get_api_key_not_found(self, mock_stderr):
-        """When no AI provider is set, it should raise ValueError."""
+    @patch("cortex.cli.setup_api_key")
+    @patch("sys.stderr")
+    def test_get_api_key_not_found(self, mock_stderr, mock_setup):
+        mock_setup.return_value = (False, None, None)
         with self.assertRaises(ValueError) as context:
             self.cli._get_api_key()
+        # Ensure this matches exactly what you RAISE in cli.py
         self.assertEqual("No AI provider configured", str(context.exception))
 
     def test_get_provider_openai(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-openai-key-123"}, clear=True):
-            with patch("pathlib.Path.home", return_value=self._temp_home):
-                # Call _get_api_key first to populate _detected_provider
-                self.cli._get_api_key()
-                provider = self.cli._get_provider()
-                self.assertEqual(provider, "openai")
+            self.cli._get_api_key()
+            provider = self.cli._get_provider()
+            self.assertEqual(provider, "openai")
 
     def test_get_provider_claude(self):
         with patch.dict(
             os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-claude-key-123"}, clear=True
         ):
-            with patch("pathlib.Path.home", return_value=self._temp_home):
-                # Call _get_api_key first to populate _detected_provider
-                self.cli._get_api_key()
-                provider = self.cli._get_provider()
-                self.assertEqual(provider, "claude")
+            # Move these 3 lines left by one tab
+            self.cli._get_api_key()
+            provider = self.cli._get_provider()
+            self.assertEqual(provider, "claude")
 
     @patch("sys.stdout")
     def test_print_status(self, mock_stdout):
@@ -78,9 +83,10 @@ class TestCortexCLI(unittest.TestCase):
         self.assertTrue(True)
 
     @patch.dict(os.environ, {}, clear=True)
-    @patch("sys.stderr")  # Suppress error output during test
-    def test_install_no_api_key(self, mock_stderr):
-        """Test that install() raises ValueError when no provider is configured."""
+    @patch("cortex.cli.setup_api_key")
+    @patch("sys.stderr")
+    def test_install_no_api_key(self, mock_stderr, mock_setup):
+        mock_setup.return_value = (False, None, None)
         with self.assertRaises(ValueError) as context:
             self.cli.install("docker")
         self.assertEqual("No AI provider configured", str(context.exception))

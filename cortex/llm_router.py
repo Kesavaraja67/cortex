@@ -168,32 +168,40 @@ class LLMRouter:
         else:
             logger.warning("⚠️  No Kimi K2 API key provided")
 
-        # 1. NEW GUARDRAIL: Ensure we only enable if explicitly told to
+        # 1. GUARDRAIL: Determine if Ollama should be enabled
         ollama_url_env = os.getenv("OLLAMA_BASE_URL")
         cortex_provider = os.getenv("CORTEX_PROVIDER")
-        # Normalize parameter to handle whitespace-only strings
+
+        # Clean the parameter and environment variable for whitespace
         clean_param = (
             ollama_base_url.strip()
             if ollama_base_url and isinstance(ollama_base_url, str)
             else ollama_base_url
         )
-        self.ollama_enabled = (
-            cortex_provider == "ollama"
-            or bool(ollama_url_env and ollama_url_env.strip())
-            or bool(clean_param)
-        )
-
-        # Use the parameter, or the env var, or the default—guaranteeing no empty strings
         clean_url_env = (
             ollama_url_env.strip() if ollama_url_env and ollama_url_env.strip() else None
         )
-        self.ollama_base_url = clean_param or clean_url_env or "http://localhost:11434"
+
+        # We only enable Ollama if explicitly requested or configured
+        self.ollama_enabled = (
+            (cortex_provider == "ollama") or bool(clean_url_env) or bool(clean_param)
+        )
+
+        # 2. Set Configuration
+        if self.ollama_enabled:
+            # Use param first, then env, then default local address
+            self.ollama_base_url = (clean_param or clean_url_env or "http://localhost:11434").strip(
+                "/"
+            )
+        else:
+            self.ollama_base_url = None
+
         self.ollama_model = ollama_model or os.getenv("OLLAMA_MODEL", "llama3.2")
         self.ollama_client = None
         self.ollama_client_async = None
 
-        # 2. Only attempt to initialize if enabled
-        if self.ollama_enabled:
+        # 3. Only attempt to initialize if enabled
+        if self.ollama_enabled and self.ollama_base_url:
             try:
                 self.ollama_client = OpenAI(
                     api_key="ollama",
@@ -205,10 +213,8 @@ class LLMRouter:
                 )
                 logger.info("✅ Ollama client initialized (%s)", self.ollama_model)
             except Exception as e:
-                # Only show a warning if the user actually TRIED to use it
                 logger.warning(f"⚠️  Ollama enabled but connection failed: {e}")
         else:
-            # Change logger.warning to logger.info so it doesn't clutter the user's terminal
             logger.info("ℹ️  Ollama not configured, skipping local LLM initialization")
 
         # Rate limiting for parallel calls
