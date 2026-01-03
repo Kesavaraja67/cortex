@@ -6,7 +6,7 @@ Handles dependency version conflicts using AI-driven intelligent analysis.
 import json
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 import semantic_version as sv
 

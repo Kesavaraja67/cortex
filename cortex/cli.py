@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from cortex.ask import AskHandler
 from cortex.branding import VERSION, console, cx_header, cx_print, show_banner
@@ -553,7 +553,7 @@ class CortexCLI:
                 console.print(f"  [bold]Action:[/bold] {s['action']}")
                 console.print(f"  [bold]Risk:[/bold]    {s['risk']}")
 
-            # 1. Create numbered choices based on Strategy IDs (Satisfies UX request)
+            # 1. Create numbered choices based on Strategy IDs
             choices = [str(s.get("id")) for s in results]
 
             # 2. Use Prompt.ask to let user pick a number (1, 2, etc.)
