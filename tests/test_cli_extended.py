@@ -40,15 +40,19 @@ class TestCortexCLIExtended(unittest.TestCase):
                 api_key = self.cli._get_api_key()
                 self.assertEqual(api_key, "sk-ant-test-claude-key")
 
-    def test_get_api_key_not_found(self) -> None:
-        # When no API key is set and user selects Ollama, falls back to Ollama local mode
-        from cortex.api_key_detector import PROVIDER_MENU_CHOICES
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("cortex.cli.setup_api_key")
+    @patch("sys.stderr")
+    def test_get_api_key_not_found(self, mock_stderr, mock_setup):
+        """Test that _get_api_key raises ValueError when no keys are provided."""
+        # Force setup_api_key to report no key found
+        mock_setup.return_value = (False, None, None)
 
-        with patch.dict(os.environ, {}, clear=True):
-            with patch("pathlib.Path.home", return_value=self._temp_home):
-                with patch("builtins.input", return_value=PROVIDER_MENU_CHOICES["ollama"]):
-                    api_key = self.cli._get_api_key()
-                    self.assertEqual(api_key, "ollama-local")
+        # Verify that the new guardrail raises the expected error
+        with self.assertRaises(ValueError) as context:
+            self.cli._get_api_key()
+
+        self.assertEqual("No AI provider configured", str(context.exception))
 
     def test_get_provider_openai(self) -> None:
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):

@@ -29,9 +29,15 @@ class TestEndToEndWorkflows(unittest.TestCase):
         effective_env = dict(BASE_ENV)
         if env:
             effective_env.update(env)
+
+        # Apply the fix globally to the helper function so all tests pass
+        safe_bootstrap = PIP_BOOTSTRAP.replace(
+            "pip install", "pip install --root-user-action=ignore"
+        )
+
         return run_in_docker(
             DEFAULT_IMAGE,
-            f"{PIP_BOOTSTRAP} && {command}",
+            f"{safe_bootstrap} && {command}",
             env=effective_env,
             mounts=[MOUNT],
             workdir="/workspace",
@@ -110,12 +116,19 @@ class TestEndToEndWorkflows(unittest.TestCase):
             "CORTEX_PROVIDER": "fake",
             "CORTEX_FAKE_COMMANDS": json.dumps({"commands": ["echo plan"]}),
         }
-        # Use PIP_BOOTSTRAP_DEV to install pytest and other dev dependencies
+
+        # 1. Define effective_env here to fix the "undefined" error
         effective_env = dict(BASE_ENV)
         effective_env.update(env)
+
+        # 2. Add the ignore flag to the DEV bootstrap command
+        bootstrap_cmd = PIP_BOOTSTRAP_DEV.replace(
+            "pip install", "pip install --root-user-action=ignore"
+        )
+
         result = run_in_docker(
             DEFAULT_IMAGE,
-            f"{PIP_BOOTSTRAP_DEV} && pytest tests/ -v --ignore=tests/integration",
+            f"{bootstrap_cmd} && pytest tests/ -v --ignore=tests/integration",
             env=effective_env,
             mounts=[MOUNT],
             workdir="/workspace",
