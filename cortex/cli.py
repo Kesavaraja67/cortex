@@ -43,7 +43,8 @@ class CortexCLI:
         if self.verbose:
             console.print(f"[dim][DEBUG] {message}[/dim]")
 
-    def _get_api_key(self) -> str | None:
+    def _get_api_key(self) -> str:
+        """Retrieve API key from environment or provider setup."""
         # 1. Check explicit provider override first
         explicit_provider = os.environ.get("CORTEX_PROVIDER", "").lower()
         if explicit_provider == "fake":
@@ -69,6 +70,7 @@ class CortexCLI:
         raise ValueError("No AI provider configured")
 
     def _get_provider(self) -> str:
+        """Determine the AI provider from environment or auto-detection."""
         # 1. Check environment variable for explicit provider choice
         explicit_provider = os.environ.get("CORTEX_PROVIDER", "").lower()
         if explicit_provider in ["ollama", "openai", "claude", "fake"]:
@@ -97,7 +99,6 @@ class CortexCLI:
             "No AI provider configured. "
             "Please set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OLLAMA_BASE_URL environment variable."
         )
-        raise ValueError("No AI provider configured")
 
     def _print_status(self, emoji: str, message: str):
         """Legacy status print - maps to cx_print for Rich output"""
@@ -111,18 +112,22 @@ class CortexCLI:
         cx_print(message, status)
 
     def _print_error(self, message: str):
+        """Display an error message to the user."""
         cx_print(f"Error: {message}", "error")
 
     def _print_success(self, message: str):
+        """Display a success message to the user."""
         cx_print(message, "success")
 
     def _animate_spinner(self, message: str):
+        """Utility helper for terminal spinner animation."""
         sys.stdout.write(f"\r{self.spinner_chars[self.spinner_idx]} {message}")
         sys.stdout.flush()
         self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
         time.sleep(0.1)
 
     def _clear_line(self):
+        """Utility helper for clearing the current terminal line."""
         sys.stdout.write("\r\033[K")
         sys.stdout.flush()
 
