@@ -1611,6 +1611,11 @@ def main():
         description="AI-powered Linux command interpreter",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument(
+        "--fix-permissions",
+        action="store_true",
+        help="Diagnose and fix Docker-related file permission issues",
+    )
 
     # Global flags
     parser.add_argument("--version", "-V", action="version", version=f"cortex {VERSION}")
@@ -1860,6 +1865,30 @@ def main():
     # --------------------------
 
     args = parser.parse_args()
+
+    if args.fix_permissions:
+        from cortex.permission_manager import PermissionManager
+
+        manager = PermissionManager(os.getcwd())
+        cx_print("🔍 Scanning for Docker-related permission issues...")
+
+        # 1. Provide the suggestion tip first
+        manager.check_compose_config()  # Suggest better settings
+
+        # 2. Run the diagnosis
+        issues = manager.diagnose()
+
+        if not issues:
+            cx_print("[green]✅ No root-owned files detected in bind mounts![/green]")
+        else:
+            cx_print(f"[yellow]⚠️ Found {len(issues)} files owned by root.[/yellow]")
+            confirm = console.input("[bold cyan]Fix these permissions now? (y/n): [/bold cyan]")
+            if confirm.lower() == "y":
+                if manager.fix_permissions(issues):
+                    cx_print("[green]✨ Permissions fixed successfully![/green]")
+                else:
+                    cx_print("[red]❌ Failed to fix permissions. You may need sudo access.[/red]")
+        sys.exit(0)
 
     if not args.command:
         show_rich_help()
