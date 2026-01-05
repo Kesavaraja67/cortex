@@ -8,13 +8,14 @@ from cortex.permission_manager import PermissionManager
 
 @pytest.fixture
 def manager():
-    """Fixture to initialize PermissionManager with a dummy path."""
+    """Create a permission manager instance with a standardized path."""
+    # Ensure the path works correctly on both Windows and Linux systems
     return PermissionManager(os.path.normpath("/dummy/path"))
 
 
 def test_diagnose_finds_root_files(manager):
-    """Test that diagnose correctly identifies root-owned files (UID 0)."""
-    # Patching the modules where they are used in permission_manager
+    """Confirm that the tool correctly identifies files owned by root."""
+    # Intercept system tools within the permission manager module for testing
     with (
         patch("cortex.permission_manager.os.walk") as mock_walk,
         patch("cortex.permission_manager.os.stat") as mock_stat,
@@ -23,13 +24,13 @@ def test_diagnose_finds_root_files(manager):
         base = os.path.normpath("/dummy/path")
         locked_file = os.path.join(base, "locked.txt")
 
-        # Mocking a directory structure
+        # Simulate a folder containing one root-owned file and one user file
         mock_walk.return_value = [(base, [], ["locked.txt", "normal.txt"])]
 
         root_stat = MagicMock()
-        root_stat.st_uid = 0  # Root UID
+        root_stat.st_uid = 0  # Identify file as owned by root
         user_stat = MagicMock()
-        user_stat.st_uid = 1000  # Normal User UID
+        user_stat.st_uid = 1000  # Identify file as owned by regular user
 
         mock_stat.side_effect = [root_stat, user_stat]
 
@@ -40,8 +41,8 @@ def test_diagnose_finds_root_files(manager):
 
 
 def test_check_compose_config_suggests_fix(manager):
-    """Test that it detects missing 'user:' and prints the tip to the Rich console."""
-    # Patch console.print inside permission_manager to verify output
+    """Confirm that a tip is shown when the user setting is missing from configuration."""
+    # Intercept file existence checks and console output within the module
     with (
         patch("cortex.permission_manager.os.path.exists", return_value=True),
         patch(
@@ -52,12 +53,10 @@ def test_check_compose_config_suggests_fix(manager):
         ),
         patch("cortex.permission_manager.console.print") as mock_console,
     ):
-
         manager.check_compose_config()
 
-        # Verify the tip was printed
+        # Check that the help message was actually displayed to the user
         mock_console.assert_called_once()
-        # Verify the content of the tip
         call_args = mock_console.call_args[0][0]
         assert "user:" in call_args
         assert "docker-compose.yml" in call_args
@@ -66,10 +65,11 @@ def test_check_compose_config_suggests_fix(manager):
 @patch("cortex.permission_manager.subprocess.run")
 @patch("cortex.permission_manager.platform.system", return_value="Linux")
 def test_fix_permissions_executes_chown(mock_platform, mock_run, manager):
-    """Test that fix_permissions triggers the correct sudo chown command with timeout."""
+    """Confirm that the ownership command is triggered with the correct settings."""
+    # Simulate user IDs which might not exist on Windows development environments
     with (
-        patch("os.getuid", create=True, return_value=1000),
-        patch("os.getgid", create=True, return_value=1000),
+        patch("cortex.permission_manager.os.getuid", create=True, return_value=1000),
+        patch("cortex.permission_manager.os.getgid", create=True, return_value=1000),
     ):
 
         test_file = os.path.normpath("/path/to/file1.txt")
@@ -77,7 +77,7 @@ def test_fix_permissions_executes_chown(mock_platform, mock_run, manager):
         success = manager.fix_permissions(files)
 
         assert success is True
-        # Ensure chown uses correct UID:GID, flags, and the new 60s timeout
+        # Verify the command includes the correct ID, file path, and a 60 second time limit
         mock_run.assert_called_once_with(
             ["sudo", "chown", "1000:1000", test_file], check=True, capture_output=True, timeout=60
         )

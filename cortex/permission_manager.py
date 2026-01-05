@@ -20,18 +20,21 @@ class PermissionManager:
         """Scans the directory for files owned by root (UID 0).
 
         Returns:
-            list[str]: A list of full file paths that have permission mismatches.
+            A list of full file paths that have permission mismatches.
         """
         root_owned_files = []
         for root, _, files in os.walk(self.base_path):
-            # Improved segment matching to avoid skipping unintended folders
+            # Split the path to check each directory name individually
             path_parts = root.split(os.sep)
-            if any(part in path_parts for part in ["venv", ".venv", ".git"]):
+
+            # Skip folders that typically contain many files but do not need checking
+            if "venv" in path_parts or ".venv" in path_parts or ".git" in path_parts:
                 continue
 
             for name in files:
                 full_path = os.path.join(root, name)
                 try:
+                    # Check if the file ownership belongs to the root user
                     if os.stat(full_path).st_uid == 0:
                         root_owned_files.append(full_path)
                 except (PermissionError, FileNotFoundError):
@@ -45,6 +48,7 @@ class PermissionManager:
             try:
                 with open(compose_path, encoding="utf-8") as f:
                     content = f.read()
+                    # Suggest a configuration tip if the user setting is missing
                     if "user:" not in content:
                         console.print(
                             "\n[bold yellow]💡 Tip: To prevent future lockouts, add "
@@ -61,7 +65,7 @@ class PermissionManager:
             file_paths: List of full paths to files requiring ownership changes.
 
         Returns:
-            bool: True on success, False on failure (handles subprocess and permission errors).
+            True if the command executed successfully, False otherwise.
         """
         if not file_paths:
             return True
@@ -72,7 +76,8 @@ class PermissionManager:
         try:
             uid = os.getuid()
             gid = os.getgid()
-            # Added 60s timeout to prevent hanging on sudo prompts
+
+            # Set a 60 second time limit to ensure the command does not hang
             subprocess.run(
                 ["sudo", "chown", f"{uid}:{gid}"] + file_paths,
                 check=True,

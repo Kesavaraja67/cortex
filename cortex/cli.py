@@ -1882,29 +1882,55 @@ def main():
     if args.fix_permissions:
         from cortex.permission_manager import PermissionManager
 
-        manager = PermissionManager(os.getcwd())
-        cx_print("🔍 Scanning for Docker-related permission issues...", "info")
+        try:
+            manager = PermissionManager(os.getcwd())
+            cx_print("🔍 Scanning for Docker-related permission issues...", "info")
 
-        manager.check_compose_config()
-        issues = manager.diagnose()
+            # Check the configuration before running the scan
+            manager.check_compose_config()
 
-        if not issues:
-            cx_print("[green]✅ No root-owned files detected in bind mounts![/green]", "success")
-            sys.exit(0)
-        else:
-            cx_print(f"[yellow]⚠️ Found {len(issues)} files owned by root.[/yellow]", "warning")
-            confirm = console.input("[bold cyan]Fix these permissions now? (y/n): [/bold cyan]")
-            if confirm.lower() == "y":
-                if manager.fix_permissions(issues):
-                    cx_print("[green]✨ Permissions fixed successfully![/green]", "success")
-                    sys.exit(0)
-                else:
-                    cx_print(
-                        "[red]❌ Failed to fix permissions. You may need sudo access.[/red]",
-                        "error",
+            # Identify files that require ownership changes
+            issues = manager.diagnose()
+
+            if not issues:
+                cx_print("✅ No root-owned files detected in bind mounts!", "success")
+                sys.exit(0)
+            else:
+                cx_print(f"⚠️ Found {len(issues)} files owned by root.", "warning")
+                try:
+                    confirm = console.input(
+                        "[bold cyan]Fix these permissions now? (y/n): [/bold cyan]"
                     )
-                    sys.exit(1)
-            sys.exit(0)
+                    if confirm.strip().lower() in ("y", "yes"):
+                        if manager.fix_permissions(issues):
+                            cx_print("✨ Permissions fixed successfully!", "success")
+                            sys.exit(0)
+                        else:
+                            cx_print(
+                                "❌ Failed to fix permissions. You may need sudo access.", "error"
+                            )
+                            sys.exit(1)
+                    else:
+                        cx_print("Operation cancelled by user.", "info")
+                        sys.exit(0)
+                except (EOFError, KeyboardInterrupt):
+                    # Handle a graceful exit if the user cancels the input
+                    console.print()
+                    cx_print("Operation cancelled by user.", "info")
+                    sys.exit(0)
+
+        except (PermissionError, FileNotFoundError, OSError) as e:
+            # Report issues related to system access or missing files
+            cx_print(f"❌ Permission check failed: {e}", "error")
+            sys.exit(1)
+        except Exception as e:
+            # Report any other unexpected errors
+            cx_print(f"❌ Unexpected error: {e}", "error")
+            if args.verbose:
+                import traceback
+
+                traceback.print_exc()
+            sys.exit(1)
 
     if not args.command:
         show_rich_help()
