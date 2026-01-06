@@ -68,15 +68,21 @@ def test_check_compose_config_generates_settings(manager):
 
 @patch("cortex.permission_manager.subprocess.run")
 @patch("cortex.permission_manager.platform.system", return_value="Linux")
-def test_fix_permissions_uses_manager_ids(mock_platform, mock_run, manager):
+def test_fix_permissions_uses_manager_ids(mock_platform, mock_run, manager, mocker):
     """Confirm the repair command uses the IDs detected during manager initialization."""
+    # 1. Prepare a path that looks consistent across platforms
     test_file = os.path.normpath("/path/to/locked_file.txt")
 
-    # We use the manager created by the fixture (already set to host 1000)
-    success = manager.fix_permissions([test_file])
+    # 2. MOCK THE DIAGNOSE CALL: This is the critical missing piece.
+    # We tell the manager to "pretend" it found the locked file.
+    mocker.patch.object(manager, "diagnose", return_value=[test_file])
 
+    # 3. Call the method with execute=True
+    success = manager.fix_permissions(execute=True)
+
+    # 4. Assertions
     assert success is True
-    # Verify the chown command uses the cached 1000:1000 IDs
+    # Verify the chown command uses the cached 1000:1000 IDs and the file we "found"
     mock_run.assert_called_once_with(
         ["sudo", "chown", "1000:1000", test_file], check=True, capture_output=True, timeout=60
     )

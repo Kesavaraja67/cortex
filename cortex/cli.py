@@ -51,41 +51,23 @@ class CortexCLI:
             # Check configuration settings before scanning files
             manager.check_compose_config()
 
-            # Find all files with mismatched ownership
-            issues = manager.diagnose()
-
-            if not issues:
-                cx_print("✅ No permission mismatches detected in bind mounts!", "success")
-                return 0
-
-            cx_print(f"⚠️ Found {len(issues)} files with incorrect ownership.", "warning")
-
-            # logic for non-interactive option (Requirement R1902)
+            # Get flags from argparse
+            # --execute: actually run the fix
+            # --yes: can still be used to skip internal confirmations if you add them later
+            execute_flag = getattr(args, "execute", False)
             auto_confirm = getattr(args, "yes", False)
 
-            if auto_confirm:
-                confirm = "y"
-            else:
-                try:
-                    # Safely handle stdin: if stdin is not available, console.input raises EOFError
-                    confirm = console.input(
-                        "[bold cyan]Fix these permissions now? (y/n): [/bold cyan]"
-                    )
-                except (EOFError, KeyboardInterrupt):
-                    # Safely exit when stdin is not available or interrupted
-                    console.print()
-                    confirm = "n"
-
-            if confirm.strip().lower() in ("y", "yes"):
-                if manager.fix_permissions(issues):
+            # Pass the execute flag to the manager.
+            # If execute_flag is False, PermissionManager will handle the Dry-run output.
+            # If execute_flag is True, it will attempt the repair.
+            if manager.fix_permissions(execute=execute_flag):
+                # We only show this success message if it wasn't a dry run
+                if execute_flag:
                     cx_print("✨ Permissions fixed successfully!", "success")
-                    return 0
-                else:
-                    cx_print("❌ Failed to fix permissions. Ensure you have sudo access.", "error")
-                    return 1
-
-            cx_print("Operation cancelled by user.", "info")
-            return 0
+                return 0
+            else:
+                # If fix_permissions returns False, it handled the error printing already
+                return 1
 
         except (PermissionError, FileNotFoundError, OSError) as e:
             # Report issues related to system access or missing files
@@ -1702,6 +1684,10 @@ def main():
 
     # Provide an option to skip the manual confirmation prompt
     perm_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
+
+    perm_parser.add_argument(
+        "--execute", "-e", action="store_true", help="Apply ownership changes (default: dry-run)"
+    )
 
     # Demo command
     demo_parser = subparsers.add_parser("demo", help="See Cortex in action")

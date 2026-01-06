@@ -88,26 +88,52 @@ class PermissionManager:
                 # Silently fail if file is unreadable to avoid blocking the main flow
                 pass
 
-    def fix_permissions(self, file_paths: list[str]) -> bool:
-        """Attempts to change ownership of files back to the current host user.
+    def fix_permissions(self, execute: bool = False) -> bool:
+        """Attempts to change ownership of files back to the host user.
 
         Args:
-            file_paths: List of full paths to files requiring ownership changes.
+            execute: If True, applies changes. If False, performs a dry-run.
 
         Returns:
-            bool: True if the command executed successfully, False otherwise.
+            bool: True if repairs succeeded or no mismatches found, False otherwise.
         """
-        if not file_paths or platform.system() == "Windows":
+        # 1. Run the diagnosis internally to get the list of files
+        mismatches = self.diagnose()
+
+        if not mismatches:
+            console.print("[bold green]✅ No permission mismatches detected.[/bold green]")
+            return True
+
+        # 2. Handle Dry-Run mode (The "Real Implementation" of the flag)
+        if not execute:
+            console.print(
+                f"\n[bold cyan]📋 [Dry-run][/bold cyan] Found {len(mismatches)} files owned by root/other UIDs."
+            )
+            for path in mismatches[:5]:
+                console.print(f"  • {path}")
+            if len(mismatches) > 5:
+                console.print(f"  ... and {len(mismatches) - 5} more.")
+
+            console.print("\n[bold yellow]👉 Run with --execute to apply repairs.[/bold yellow]")
+            return True
+
+        # 3. Handle Real Execution (Only runs if execute=True)
+        if platform.system() == "Windows":
+            console.print("[red]Error: Permission repairs are only supported on Linux/WSL.[/red]")
             return False
 
+        console.print(
+            f"[bold core_blue]🔧 Applying repairs to {len(mismatches)} paths...[/bold core_blue]"
+        )
         try:
-            # Execute ownership change using sudo to reclaim files
             subprocess.run(
-                ["sudo", "chown", f"{self.host_uid}:{self.host_gid}"] + file_paths,
+                ["sudo", "chown", f"{self.host_uid}:{self.host_gid}"] + mismatches,
                 check=True,
                 capture_output=True,
                 timeout=60,
             )
+            console.print("[bold green]✅ Ownership reclaimed successfully![/bold green]")
             return True
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, PermissionError):
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, PermissionError) as e:
+            console.print(f"[bold red]❌ Failed to fix permissions: {str(e)}[/bold red]")
             return False
