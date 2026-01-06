@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-import subprocess
 import sys
 import time
 from datetime import datetime
@@ -43,11 +42,18 @@ class CortexCLI:
     def docker_permissions(self, args: argparse.Namespace) -> int:
         """Handle the diagnosis and repair of Docker file permissions.
 
+        This method coordinates the environment-aware scanning of the project
+        directory and applies ownership reclamation logic. It ensures that
+        administrative actions (sudo) are never performed without user
+        acknowledgment unless the non-interactive flag is present.
+
         Args:
-            args: The parsed command-line arguments containing the execution flags.
+            args: The parsed command-line arguments containing the execution
+                context and safety flags.
 
         Returns:
-            int: 0 if successful or no issues found, 1 if an error occurred.
+            int: 0 if successful or the operation was gracefully cancelled,
+                1 if a system or logic error occurred.
         """
         from cortex.permission_manager import PermissionManager
 
@@ -56,13 +62,40 @@ class CortexCLI:
             cx_print("🔍 Scanning for Docker-related permission issues...", "info")
 
             # Validate Docker Compose configurations for missing user mappings
+            # to help prevent future permission drift.
             manager.check_compose_config()
 
-            # Retrieve execution context from argparse
+            # Retrieve execution context from argparse.
             execute_flag = getattr(args, "execute", False)
+            yes_flag = getattr(args, "yes", False)
 
-            # Delegate logic to PermissionManager. If execute is False, a dry-run
-            # report is generated. If True, sudo repairs are attempted in batches.
+            # SAFETY GUARD: If executing repairs, prompt for confirmation unless
+            # the --yes flag was provided. This follows the project safety
+            # standard: 'No silent sudo execution'.
+            if execute_flag and not yes_flag:
+                mismatches = manager.diagnose()
+                if mismatches:
+                    cx_print(
+                        f"⚠️ Found {len(mismatches)} paths requiring ownership reclamation.",
+                        "warning",
+                    )
+                    try:
+                        # Interactive confirmation prompt for administrative repair.
+                        response = console.input(
+                            "[bold cyan]Reclaim ownership using sudo? (y/n): [/bold cyan]"
+                        )
+                        if response.lower() not in ("y", "yes"):
+                            cx_print("Operation cancelled", "info")
+                            return 0
+                    except (EOFError, KeyboardInterrupt):
+                        # Graceful handling of terminal exit or manual interruption.
+                        console.print()
+                        cx_print("Operation cancelled", "info")
+                        return 0
+
+            # Delegate repair logic to PermissionManager. If execute is False,
+            # a dry-run report is generated. If True, repairs are batched to
+            # avoid system ARG_MAX shell limits.
             if manager.fix_permissions(execute=execute_flag):
                 if execute_flag:
                     cx_print("✨ Permissions fixed successfully!", "success")
@@ -71,15 +104,15 @@ class CortexCLI:
             return 1
 
         except (PermissionError, FileNotFoundError, OSError) as e:
-            # Handle system-level access issues or missing project files
+            # Handle system-level access issues or missing project files.
             cx_print(f"❌ Permission check failed: {e}", "error")
             return 1
-        except RuntimeError as e:
-            # Catch logic-specific errors without masking them as system failures
-            cx_print(f"❌ Logic error during repair: {e}", "error")
+        except NotImplementedError as e:
+            # Report environment incompatibility (e.g., native Windows).
+            cx_print(f"❌ {e}", "error")
             return 1
         except Exception as e:
-            # Final safety net for unexpected runtime exceptions
+            # Safety net for unexpected runtime exceptions to prevent CLI crashes.
             cx_print(f"❌ Unexpected error: {e}", "error")
             return 1
 
