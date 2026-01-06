@@ -250,7 +250,8 @@ class DockerSandbox:
             )
             if result.returncode != 0:
                 raise DockerNotFoundError(
-                    "Docker daemon is not running.\nStart Docker with: sudo systemctl start docker"
+                    "Docker daemon is not running.\n"
+                    "Start Docker with: sudo systemctl start docker"
                 )
         except subprocess.TimeoutExpired:
             raise DockerNotFoundError("Docker daemon is not responding.")
