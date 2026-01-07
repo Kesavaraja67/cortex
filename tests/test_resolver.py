@@ -17,13 +17,13 @@ from cortex.resolver import DependencyResolver
 class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
     """Test suite for AI-powered dependency conflict resolution."""
 
-    async def asyncSetUp(self):
+    async def asyncSetUp(self) -> None:
         """Set up test fixtures before each test."""
         self.resolver = DependencyResolver(api_key="test", provider="fake")
         # Initialize the mock
         self.resolver.handler.ask = MagicMock()
 
-    async def test_deterministic_intersection(self):
+    async def test_deterministic_intersection(self) -> None:
         """Test that compatible versions are resolved mathematically."""
         conflict_data = {
             "dependency": "django",
@@ -32,7 +32,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         }
 
         self.resolver.handler.ask.reset_mock()
-        strategies = await self.resolver.resolve(conflict_data)
+        strategies = self.resolver.resolve(conflict_data)
 
         # Verify Low risk
         self.assertEqual(strategies[0]["risk"], "Low")
@@ -51,10 +51,10 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         # AI returns garbage
         self.resolver.handler.ask.return_value = "Not JSON"
 
-        strategies = await self.resolver.resolve(conflict_data)
+        strategies = self.resolver.resolve(conflict_data)
 
         # Should now be True because of our resolver.py fix
-        self.assertTrue(len(strategies) >= 1)
+        self.assertGreaterEqual(len(strategies), 1)
         self.assertEqual(strategies[0]["type"], "Manual")
 
     async def test_ai_fallback_resolution(self):
@@ -70,7 +70,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
             '[{"id": 1, "type": "Recommended", "action": "Use lib-x 2.0.0", "risk": "Medium"}]'
         )
 
-        strategies = await self.resolver.resolve(conflict_data)
+        strategies = self.resolver.resolve(conflict_data)
 
         self.assertEqual(len(strategies), 1)
         self.assertEqual(strategies[0]["action"], "Use lib-x 2.0.0")
@@ -93,10 +93,10 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         # Simulate AI returning corrupted data
         self.resolver.handler.ask.return_value = "ERROR: SYSTEM OVERLOAD"
 
-        strategies = await self.resolver.resolve(conflict_data)
+        strategies = self.resolver.resolve(conflict_data)
 
         # Should return at least the fallback manual/deterministic strategy
-        self.assertTrue(len(strategies) >= 1)
+        self.assertGreaterEqual(len(strategies), 1)
         self.assertEqual(strategies[0]["type"], "Manual")
 
     async def test_empty_intersection_triggers_ai(self):
@@ -114,7 +114,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
             '"risk": "High"}]'
         )
 
-        strategies = await self.resolver.resolve(conflict_data)
+        strategies = self.resolver.resolve(conflict_data)
 
         # AI should be called
         self.assertTrue(self.resolver.handler.ask.called)
@@ -131,7 +131,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
             "package_b": {"name": "data-lib", "requires": "==1.24.0"},
         }
 
-        strategies = await self.resolver.resolve(conflict_data)
+        strategies = self.resolver.resolve(conflict_data)
 
         # Should resolve deterministically
         self.assertEqual(strategies[0]["risk"], "Low")
@@ -154,7 +154,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
             "]"
         )
 
-        strategies = await self.resolver.resolve(conflict_data)
+        strategies = self.resolver.resolve(conflict_data)
 
         # Should return both strategies
         self.assertEqual(len(strategies), 2)
@@ -169,7 +169,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
             "package_b": {"name": "app-2", "requires": " <4.0.0 "},
         }
 
-        strategies = await self.resolver.resolve(conflict_data)
+        strategies = self.resolver.resolve(conflict_data)
 
         # This will now pass because of the .strip() and .match() logic
         self.assertEqual(strategies[0]["risk"], "Low")

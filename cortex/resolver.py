@@ -34,7 +34,7 @@ class DependencyResolver:
             provider=provider,
         )
 
-    async def resolve(self, conflict_data: dict[str, Any]) -> list[dict[str, Any]]:
+    def resolve(self, conflict_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Resolve version conflicts using deterministic analysis and AI.
 
         Args:
