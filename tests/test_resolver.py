@@ -23,7 +23,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         # Initialize the mock
         self.resolver.handler.ask = MagicMock()
 
-    async def test_deterministic_intersection(self) -> None:
+    def test_deterministic_intersection(self) -> None:
         """Test that compatible versions are resolved mathematically."""
         conflict_data = {
             "dependency": "django",
@@ -41,7 +41,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         # Verify AI was not called
         self.assertFalse(self.resolver.handler.ask.called)
 
-    async def test_invalid_ai_json_fallback(self):
+    def test_invalid_ai_json_fallback(self):
         """Ensure fallback happens if AI returns garbage."""
         conflict_data = {
             "dependency": "lib-x",
@@ -57,7 +57,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(strategies), 1)
         self.assertEqual(strategies[0]["type"], "Manual")
 
-    async def test_ai_fallback_resolution(self):
+    def test_ai_fallback_resolution(self):
         """Ensure AI reasoning is used when versions are incompatible."""
         conflict_data = {
             "dependency": "lib-x",
@@ -77,13 +77,13 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         # Verify AI fallback was triggered
         self.resolver.handler.ask.assert_called_once()
 
-    async def test_missing_keys_raises_error(self):
+    def test_missing_keys_raises_error(self):
         """Verify KeyError is raised for malformed input data."""
         bad_data = {"dependency": "lib-x"}
         with self.assertRaises(KeyError):
-            await self.resolver.resolve(bad_data)
+            self.resolver.resolve(bad_data)
 
-    async def test_ai_exception_handling(self):
+    def test_ai_exception_handling(self):
         """Ensure the resolver falls back to manual if AI returns bad JSON."""
         conflict_data = {
             "dependency": "lib-x",
@@ -99,7 +99,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(strategies), 1)
         self.assertEqual(strategies[0]["type"], "Manual")
 
-    async def test_empty_intersection_triggers_ai(self):
+    def test_empty_intersection_triggers_ai(self):
         """Test that non-overlapping versions trigger AI resolution."""
         conflict_data = {
             "dependency": "pytest",
@@ -123,7 +123,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(strategies[0]["risk"], "High")
         self.assertIn("pytest", strategies[0]["action"])
 
-    async def test_exact_version_match(self):
+    def test_exact_version_match(self):
         """Test resolution when both packages require exact same version."""
         conflict_data = {
             "dependency": "numpy",
@@ -138,7 +138,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         self.assertIn("1.24.0", strategies[0]["action"])
         self.assertFalse(self.resolver.handler.ask.called)
 
-    async def test_ai_returns_multiple_strategies(self):
+    def test_ai_returns_multiple_strategies(self):
         """Test handling of multiple resolution strategies from AI."""
         conflict_data = {
             "dependency": "requests",
@@ -161,7 +161,7 @@ class TestDependencyResolver(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(strategies[0]["risk"], "Low")
         self.assertEqual(strategies[1]["risk"], "Medium")
 
-    async def test_whitespace_handling_in_constraints(self):
+    def test_whitespace_handling_in_constraints(self):
         """Test that version constraints with whitespace are handled correctly."""
         conflict_data = {
             "dependency": "django",
