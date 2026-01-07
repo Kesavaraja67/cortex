@@ -259,9 +259,13 @@ class TestAskHandlerProviders(unittest.TestCase):
 
         # Test deterministic default behavior when no env var or config file exists.
         # Point the home directory to a temporary location without ~/.cortex/config.json
+        # Also ensure OLLAMA_MODEL is not set in the environment so get_ollama_model()
+        # exercises the built-in default model lookup.
+        env_without_ollama = {k: v for k, v in os.environ.items() if k != "OLLAMA_MODEL"}
         with (
             tempfile.TemporaryDirectory() as tmpdir,
             patch("cortex.config_utils.Path.home", return_value=Path(tmpdir)),
+            patch.dict(os.environ, env_without_ollama, clear=True),
         ):
             handler2 = AskHandler(api_key="test", provider="ollama")
             # When no env var and no config file exist, AskHandler should use its built-in default.
