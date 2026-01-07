@@ -5,8 +5,8 @@ Handles identification of system purpose and suggests relevant software stacks.
 
 import copy
 import fcntl
+import json
 import logging
-import os
 import re
 import shutil
 from collections.abc import Callable
@@ -80,8 +80,6 @@ class RoleManager:
         if not self.custom_roles_file.exists():
             return
 
-        import json
-
         try:
             # Atomic read of user-defined roles
             custom_data = json.loads(self.custom_roles_file.read_text())
@@ -114,7 +112,17 @@ class RoleManager:
 
         Args:
             role_slug: The machine-readable identifier to save.
+
+        Raises:
+            ValueError: If role_slug is not a valid role identifier.
+            RuntimeError: If the role cannot be persisted to disk.
         """
+        # Validate that the slug exists in our definitions to prevent
+        # persisting invalid configurations to the .env file.
+        if role_slug not in self.get_all_slugs():
+            raise ValueError(
+                f"Invalid role slug: {role_slug}. " f"Valid slugs: {self.get_all_slugs()}"
+            )
 
         def modifier(existing_content: str, key: str, value: str) -> str:
             if f"{key}=" in existing_content:
@@ -186,8 +194,6 @@ class RoleManager:
         learned_file = self.env_file.parent / "learned_roles.json"
 
         def modifier(existing_json: str, key: str, value: str) -> str:
-            import json
-
             try:
                 # Safely handle empty files or malformed JSON
                 data = json.loads(existing_json) if existing_json else {}
