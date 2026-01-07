@@ -83,8 +83,15 @@ class RoleManager:
         try:
             # Atomic read of user-defined roles
             custom_data = json.loads(self.custom_roles_file.read_text())
-            # Merge custom roles into the active roles dictionary
-            self.roles.update(custom_data)
+            # Validate and merge custom roles to prevent KeyErrors later
+            required_keys = {"slug", "binaries", "recommendations"}
+            for role_name, config in custom_data.items():
+                if not isinstance(config, dict) or not required_keys.issubset(config.keys()):
+                    logger.warning(
+                        f"Skipping invalid custom role '{role_name}': missing required keys"
+                    )
+                    continue
+                self.roles[role_name] = config
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in {self.custom_roles_file}: {e}")
         except (OSError, PermissionError) as e:
@@ -139,7 +146,8 @@ class RoleManager:
             self._locked_read_modify_write(self.CONFIG_KEY, role_slug, modifier)
         except Exception as e:
             logger.error(f"Failed to save system role: {e}")
-            raise RuntimeError(f"Could not persist role to {self.env_file}")
+            # Chain the original exception 'from e' to preserve debugging context
+            raise RuntimeError(f"Could not persist role to {self.env_file}") from e
 
     def get_saved_role(self) -> str | None:
         """
@@ -199,6 +207,10 @@ class RoleManager:
                 data = json.loads(existing_json) if existing_json else {}
             except json.JSONDecodeError:
                 data = {}
+
+            # Ensure the entry is a list, even if the file was manually corrupted or edited
+            if key not in data or not isinstance(data[key], list):
+                data[key] = []
 
             if key not in data:
                 data[key] = []
