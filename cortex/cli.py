@@ -301,7 +301,9 @@ class CortexCLI:
                 "GPU Acceleration available" if context.get("has_gpu") else "Standard CPU only"
             )
 
-            # Generate a unique session nonce and timestamp for cache-busting.
+            # Cache-busting via unique session IDs and high-precision timestamps is required
+            # to ensure fresh AI inference and prevent LLM providers from returning stale
+            # or previously cached role suggestions.
             nonce = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
             timestamp = datetime.now().strftime("%H:%M:%S.%f")
 
@@ -344,7 +346,7 @@ class CortexCLI:
             try:
                 manager.save_role(role_slug)
             except ValueError as e:
-                self._print_error(f"Invalid role slug: {str(e)}")
+                self._print_error(f"Invalid role slug: {e}")
                 return 1
 
             cx_print(f"✓ Role set to: [bold cyan]{role_slug}[/bold cyan]", "success")
@@ -374,9 +376,6 @@ class CortexCLI:
             )
             console.print("[bold cyan]    cortex install <package_name>[/bold cyan]\n")
             return exit_code
-
-        # Safety fallback to ensure an integer return status.
-        return 1
 
     def demo(self):
         """

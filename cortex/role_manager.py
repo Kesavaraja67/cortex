@@ -1,4 +1,7 @@
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import logging
 import re
 import shutil
@@ -213,7 +216,8 @@ class RoleManager:
         lock_file.touch(exist_ok=True)
 
         with open(lock_file, "r+") as lock_fd:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if fcntl:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
             try:
                 existing = target.read_text() if target.exists() else ""
                 updated = modifier_func(existing, key, value)
@@ -225,4 +229,5 @@ class RoleManager:
                 # Atomic swap ensures data integrity
                 temp_file.replace(target)
             finally:
-                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                if fcntl:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
