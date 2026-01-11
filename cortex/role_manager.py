@@ -1,19 +1,33 @@
+import logging
+import os
+import re
+import shutil
+import sys
+from collections.abc import Callable
+from pathlib import Path
+from types import ModuleType
+from typing import Any, Optional, TypedDict
+
+# Explicit type annotation for modules to satisfy type-checkers
+# and handle conditional imports gracefully.
+fcntl: ModuleType | None = None
 try:
     import fcntl
 except ImportError:
     fcntl = None
-import logging
-import re
-import shutil
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any, TypedDict
+
+msvcrt: ModuleType | None = None
+if sys.platform == "win32":
+    try:
+        import msvcrt
+    except ImportError:
+        msvcrt = None
 
 logger = logging.getLogger(__name__)
 
 
 class SystemContext(TypedDict):
-    """Structured type for system architectural facts."""
+    """Structured type representing core system architectural facts."""
 
     binaries: list[str]
     has_gpu: bool
@@ -26,41 +40,18 @@ class RoleManager:
     """
     Provides system context for LLM-driven role detection and recommendations.
 
-    This class serves as the 'sensing layer' for Cortex. It scans the local
-    environment for technical signals (binaries, hardware, and history) and
-    packages them into a synchronized Single Source of Truth for AI inference.
+    Serves as the 'sensing layer' for the system architect. It aggregates factual
+    signals (binary presence, hardware capabilities, and minimized shell patterns)
+    to provide a synchronized ground truth for AI inference.
     """
 
-    # Configuration keys and paths
     CONFIG_KEY = "CORTEX_SYSTEM_ROLE"
 
-    def __init__(self, env_path: Path | None = None) -> None:
-        """
-        Initializes the manager and sets the configuration and history paths.
-
-        Args:
-            env_path: Optional Path to the environment file.
-                     Defaults to ~/.cortex/.env.
-        """
-        self.env_file = env_path or (Path.home() / ".cortex" / ".env")
-        # Learning from installations: Reference the local history database
-        self.history_db = Path.home() / ".cortex" / "history.db"
-
-    def _get_shell_patterns(self) -> list[str]:
-        """
-        Senses user activity patterns from local shell history files with
-        hardened regex-based PII redaction.
-
-        This method fulfills the 'Learn from patterns' requirement by providing
-        contextual intent to the AI while ensuring sensitive credentials like
-        API keys, tokens, and exported secrets are sanitized.
-
-        Returns:
-            list[str]: The last 15 trimmed and redacted shell commands.
-        """
-        # Advanced regex patterns to detect sensitive data (API keys, exports, and curl headers)
-        sensitive_patterns = [
-            # 1. Standard Credentials & Auth Headers
+    # Performance: Precompile patterns once at the class level to optimize regex matching
+    # performance across repeated CLI executions and prevent redundant overhead.
+    _SENSITIVE_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+        re.compile(p)
+        for p in [
             r"(?i)api[-_]?key\s*[:=]\s*[^\s]+",
             r"(?i)token\s*[:=]\s*[^\s]+",
             r"(?i)password\s*[:=]\s*[^\s]+",
@@ -69,22 +60,56 @@ class RoleManager:
             r"(?i)Bearer\s+[^\s]+",
             r"(?i)X-Api-Key:\s*[^\s]+",
             r"(?i)-H\s+['\"][^'\"]*auth[^'\"]*['\"]",
-            # 2. Environment Variable Exports
             r"(?i)export\s+(?:[^\s]*(?:key|token|secret|password|passwd|credential|auth)[^\s]*)=[^\s]+",
-            # 3. Cloud Provider Credentials (AWS, GCP, Azure)
             r"(?i)AWS_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY)\s*[:=]\s*[^\s]+",
             r"(?i)GOOGLE_APPLICATION_CREDENTIALS\s*[:=]\s*[^\s]+",
             r"(?i)GCP_(?:SERVICE_ACCOUNT|CREDENTIALS)\s*[:=]\s*[^\s]+",
             r"(?i)AZURE_(?:CLIENT_SECRET|TENANT_ID|SUBSCRIPTION_ID)\s*[:=]\s*[^\s]+",
-            # 4. Version Control & DevOps Tokens
             r"(?i)(?:GITHUB|GITLAB)_TOKEN\s*[:=]\s*[^\s]+",
             r"(?i)docker\s+login.*-p\s+[^\s]+",
-            # 5. Infrastructure & Security (Keys, SSH, DB URLs)
             r"(?i)-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
             r"(?i)sshpass\s+-p\s+[^\s]+",
             r"(?i)ssh-add.*-k",
             r"(?i)(?:postgres|mysql|mongodb)://[^@\s]+:[^@\s]+@",
         ]
+    )
+
+    def __init__(self, env_path: Path | None = None) -> None:
+        """
+        Initializes the manager and sets the configuration and history paths.
+
+        Args:
+            env_path: Optional Path to the environment file. Defaults to ~/.cortex/.env.
+        """
+        self.env_file = env_path or (Path.home() / ".cortex" / ".env")
+        self.history_db = Path.home() / ".cortex" / "history.db"
+
+    def _get_shell_patterns(self) -> list[str]:
+        """
+        Senses user intent from shell history while minimizing privacy risk.
+
+        Provides a toggle for history sensing via 'CORTEX_SENSE_HISTORY' env var.
+        Uses intent tokenization to strip raw arguments, returning coarse-grained
+        activity tokens instead of raw strings to avoid leaking local metadata.
+
+        Returns:
+            list[str]: A list of coarse-grained intent tokens (e.g., 'intent:install').
+        """
+        if os.environ.get("CORTEX_SENSE_HISTORY", "true").lower() == "false":
+            return []
+
+        # Maps raw shell verbs to generalized intent categories to prevent data leakage
+        intent_map = {
+            "apt": "intent:install",
+            "pip": "intent:install",
+            "npm": "intent:install",
+            "kubectl": "intent:k8s",
+            "helm": "intent:k8s",
+            "docker": "intent:container",
+            "git": "intent:version_control",
+            "systemctl": "intent:service_mgmt",
+            "python": "intent:execution",
+        }
 
         try:
             all_history_lines: list[str] = []
@@ -93,19 +118,33 @@ class RoleManager:
                 if not path.exists():
                     continue
 
-                # Standardizing on utf-8 with error handling for corrupted binary data
-                lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-                all_history_lines.extend(lines)
+                # errors="ignore" prevents crashes on non-UTF-8 binary data in history files
+                all_history_lines.extend(
+                    path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                )
 
             trimmed_commands = [l.strip() for l in all_history_lines if l.strip()]
             recent_commands = trimmed_commands[-15:]
 
-            # Redaction: Replace commands matching sensitive patterns with a safe placeholder
-            return [
-                "<redacted>" if any(re.search(p, cmd) for p in sensitive_patterns) else cmd
-                for cmd in recent_commands
-                if not cmd.startswith("cortex role set")
-            ]
+            patterns = []
+            for cmd in recent_commands:
+                if cmd.startswith("cortex role set"):
+                    continue
+
+                # Check against precompiled PII/Credential patterns
+                if any(p.search(cmd) for p in self._SENSITIVE_PATTERNS):
+                    patterns.append("<redacted>")
+                    continue
+
+                # Data Minimization: Extract the verb and map to an intent token
+                parts = cmd.split()
+                if not parts:
+                    continue
+
+                verb = parts[0].lower()
+                patterns.append(intent_map.get(verb, f"intent:{verb}"))
+
+            return patterns
 
         except OSError as e:
             logger.warning("Access denied to sensing layer history: %s", e)
@@ -118,15 +157,9 @@ class RoleManager:
         """
         Aggregates factual system signals and activity patterns for AI inference.
 
-        Acts as the 'sensing layer' for the AI Architect. This method now
-        incorporates multi-vendor GPU detection (NVIDIA, AMD, Intel) and
-        installation history to provide a complete factual ground truth.
-
         Returns:
-            SystemContext: Structured facts including binaries, hardware
-                           acceleration, patterns, and installation status.
+            SystemContext: Factual architectural context including hardware and signals.
         """
-        # Curated signature binaries for cross-domain identification (Web, DB, ML, Dev)
         signals = [
             "nginx",
             "apache2",
@@ -152,15 +185,12 @@ class RoleManager:
             "python3",
         ]
 
-        detected_binaries = [bin for bin in signals if shutil.which(bin)]
+        # Use 'signal' as loop variable to avoid shadowing built-in bin() function
+        detected_binaries = [signal for signal in signals if shutil.which(signal)]
 
-        # Broad hardware detection: Check for NVIDIA, AMD (ROCm), or Intel GPU tools
         has_gpu = any(x in detected_binaries for x in ["nvidia-smi", "rocm-smi", "intel_gpu_top"])
-
-        # Check for installation history to satisfy 'Learning from installations'
         has_install_history = self.history_db.exists()
 
-        # Explicitly return as the SystemContext TypedDict
         return {
             "binaries": detected_binaries,
             "has_gpu": has_gpu,
@@ -171,27 +201,18 @@ class RoleManager:
 
     def save_role(self, role_slug: str) -> None:
         """
-        Persists the AI-selected role identifier to the configuration file.
+        Persists the system role identifier using an atomic update pattern.
 
         Args:
-            role_slug: The role slug. Supports alphanumeric characters, dashes,
-                       and underscores (e.g., 'ml', 'ML-Workstation').
-
-        Raises:
-            ValueError: If the role_slug format is invalid or malicious.
-            RuntimeError: If file persistence fails.
+            role_slug: The role identifier (e.g., 'data-scientist').
         """
-        # Professional-grade validation: Allows short slugs ('ml') and uppercase
         if not re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?", role_slug):
             logger.error("Invalid role slug rejected: %r", role_slug)
             raise ValueError(f"Invalid role slug format: {role_slug!r}")
 
         def modifier(existing_content: str, key: str, value: str) -> str:
-            """Safe regex-based modifier for atomic file updates."""
-            pattern = rf"^{re.escape(key)}=.*$"
-
+            pattern = rf"^(?:export\s+)?{re.escape(key)}\s*=.*$"
             if re.search(pattern, existing_content, flags=re.MULTILINE):
-                # Using a lambda ensures backslashes are treated as literal text
                 return re.sub(
                     pattern, lambda _: f"{key}={value}", existing_content, flags=re.MULTILINE
                 )
@@ -208,20 +229,26 @@ class RoleManager:
 
     def get_saved_role(self) -> str | None:
         """
-        Reads the currently active role from the configuration file.
+        Reads the active role with tolerant parsing for standard shell file formats.
 
         Returns:
-            str | None: The saved role slug or None if no role is configured.
+            str | None: The saved role slug or None if no meaningful value is found.
         """
         if not self.env_file.exists():
             return None
 
         try:
-            # Use explicit UTF-8 encoding for cross-platform consistency
-            content = self.env_file.read_text(encoding="utf-8")
-            match = re.search(rf"^{self.CONFIG_KEY}=(.*)$", content, re.MULTILINE)
-            # Normalize whitespace-only/empty matches to None
-            value = match.group(1).strip() if match else None
+            # Use errors="replace" to handle decoding issues on corrupted environment files
+            content = self.env_file.read_text(encoding="utf-8", errors="replace")
+
+            # Tolerant parsing handles optional 'export', flexible spacing, and quotes
+            pattern = rf"^(?:export\s+)?{re.escape(self.CONFIG_KEY)}\s*=\s*['\"]?(.*?)['\"]?$"
+            match = re.search(pattern, content, re.MULTILINE)
+
+            if not match:
+                return None
+
+            value = match.group(1).strip()
             return value if value else None
         except Exception as e:
             logger.error("Error reading saved role: %s", e)
@@ -235,44 +262,53 @@ class RoleManager:
         target_file: Path | None = None,
     ) -> None:
         """
-        Performs an atomic, thread-safe file update with advisory locking.
+        Performs a thread-safe, atomic file update with cross-platform locking support.
 
-        Uses a write-to-temp-then-replace pattern to ensure atomicity. On POSIX
-        systems, fcntl advisory locks prevent concurrent writes. On Windows,
-        locking is unavailable but atomicity is still provided by the OS-level
-        file replace operation.
-
-        Args:
-            key: Configuration key to update
-            value: New value for the key
-            modifier_func: Function that takes (existing_content, key, value)
-                          and returns the modified content
-            target_file: Optional override for the target file path
-                        (defaults to self.env_file)
-
-        Raises:
-            OSError: If file operations fail
-            Exception: Propagates exceptions from modifier_func
+        Implements POSIX advisory locking (fcntl) or Windows byte-range locking
+        (msvcrt) to prevent lost updates. Employs a write-to-temporary-and-swap
+        pattern with explicit cleanup to ensure file integrity.
         """
         target = target_file or self.env_file
         target.parent.mkdir(parents=True, exist_ok=True)
 
         lock_file = target.with_suffix(".lock")
         lock_file.touch(exist_ok=True)
+        try:
+            lock_file.chmod(0o600)
+        except OSError:
+            pass
 
-        with open(lock_file, "r+") as lock_fd:
-            if fcntl:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            try:
-                existing = target.read_text(encoding="utf-8") if target.exists() else ""
-                updated = modifier_func(existing, key, value)
-
-                temp_file = target.with_suffix(".tmp")
-                temp_file.write_text(updated, encoding="utf-8")
-                temp_file.chmod(0o600)  # User-restricted permissions
-
-                # Atomic swap ensures data integrity
-                temp_file.replace(target)
-            finally:
+        temp_file = target.with_suffix(".tmp")
+        try:
+            with open(lock_file, "r+") as lock_fd:
+                # Platform-aware concurrency protection
                 if fcntl:
-                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                elif msvcrt:
+                    msvcrt.locking(lock_fd.fileno(), msvcrt.LK_LOCK, 1)
+
+                try:
+                    existing = (
+                        target.read_text(encoding="utf-8", errors="replace")
+                        if target.exists()
+                        else ""
+                    )
+                    updated = modifier_func(existing, key, value)
+
+                    temp_file.write_text(updated, encoding="utf-8")
+                    temp_file.chmod(0o600)
+
+                    # Atomic swap guaranteed by the OS replace operation
+                    temp_file.replace(target)
+                finally:
+                    if fcntl:
+                        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    elif msvcrt:
+                        msvcrt.locking(lock_fd.fileno(), msvcrt.LK_UNLCK, 1)
+        finally:
+            # Cleanup mechanism to remove orphaned temporary files on failure
+            if temp_file.exists():
+                try:
+                    os.remove(temp_file)
+                except OSError:
+                    pass
