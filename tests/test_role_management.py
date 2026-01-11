@@ -15,6 +15,13 @@ def temp_cortex_dir(tmp_path):
     return cortex_dir
 
 
+@pytest.fixture
+def role_manager(temp_cortex_dir):
+    """Provides a RoleManager instance configured to use a temporary directory."""
+    env_path = temp_cortex_dir / ".env"
+    return RoleManager(env_path=env_path)
+
+
 def test_get_system_context_fact_gathering(temp_cortex_dir):
     """
     Verifies that RoleManager correctly aggregates system facts and active persona.
@@ -42,7 +49,7 @@ def test_get_system_context_fact_gathering(temp_cortex_dir):
         assert "nginx" in context["binaries"]
         assert "nvidia-smi" not in context["binaries"]
         assert context["has_gpu"] is False
-        assert "git commit -m 'feat'" in context["patterns"]
+        assert "intent:version_control" in context["patterns"]
         assert context["active_role"] == "undefined"
 
 
@@ -221,7 +228,7 @@ def test_shell_pattern_redaction_robustness(temp_cortex_dir):
         assert "<redacted>" in patterns
 
         # 3. Confirm that safe technical signals are preserved for AI context
-        assert "ls -la" in patterns
+        assert "intent:ls" in patterns
 
 
 def test_save_role_slug_boundary_validation(temp_cortex_dir):
@@ -243,3 +250,49 @@ def test_save_role_slug_boundary_validation(temp_cortex_dir):
     # Slugs starting with dash/underscore should be invalid
     with pytest.raises(ValueError):
         manager.save_role("-dev")
+
+
+def test_get_shell_patterns_opt_out(role_manager, monkeypatch):
+    """Verify history sensing can be disabled via environment variable."""
+    monkeypatch.setenv("CORTEX_SENSE_HISTORY", "false")
+    patterns = role_manager._get_shell_patterns()
+    assert patterns == []
+
+
+def test_get_saved_role_tolerant_parsing(role_manager, tmp_path):
+    """Test parsing of manual edits with 'export' and variable spacing."""
+    env_file = tmp_path / ".env"
+    # The regex requires the key to be at the start of the line or preceded by 'export'
+    env_file.write_text('export CORTEX_SYSTEM_ROLE="senior-dev"', encoding="utf-8")
+
+    # Crucial: Point the manager to this specific file
+    role_manager.env_file = env_file
+
+    assert role_manager.get_saved_role() == "senior-dev"
+
+
+def test_locked_write_windows_fallback(role_manager, monkeypatch):
+    """Mock Windows platform to exercise msvcrt locking paths."""
+    mock_msvcrt = MagicMock()
+    # Mock BOTH the platform and the internal module reference
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setattr("cortex.role_manager.msvcrt", mock_msvcrt)
+    monkeypatch.setattr("cortex.role_manager.fcntl", None)
+
+    role_manager.save_role("win-test")
+
+    # Check if locking was called (msvcrt.locking is the method used)
+    assert mock_msvcrt.locking.called
+
+
+def test_get_shell_patterns_corrupted_data(role_manager, tmp_path, monkeypatch):
+    """Verify errors='replace' handles non-UTF-8 bytes in history files."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    # Ensure we use a recognized verb like 'git' or 'ls'
+    history_file = tmp_path / ".bash_history"
+    history_file.write_bytes(b"ls -la\n\xff\xfe\xfd\ngit commit -m 'test'")
+
+    patterns = role_manager._get_shell_patterns()
+    assert "intent:ls" in patterns
+    # In your code, 'git' maps to 'intent:version_control'
+    assert "intent:version_control" in patterns
