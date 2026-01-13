@@ -279,7 +279,7 @@ class CortexCLI:
         if not api_key:
             self._print_error("No API key found. Please configure an API provider.")
             return 1
-            
+
         provider = self._get_provider()
         try:
             handler = AskHandler(api_key=api_key, provider=provider)
@@ -293,7 +293,7 @@ class CortexCLI:
         except (ValueError, RuntimeError) as e:
             self._print_error(str(e))
             return 1
-        
+
     def role(self, args: argparse.Namespace) -> int:
         """
         Handles system role detection and manual configuration via AI context sensing.
@@ -421,7 +421,7 @@ class CortexCLI:
                 f"💡 Recommended packages for {role_slug}:\n"
                 f"  - "
             )
-            
+
             if self._ask_ai_and_render(rec_question) != 0:
                 return 1
 
