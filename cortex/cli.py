@@ -341,6 +341,11 @@ class CortexCLI:
 
             # Capture the AI response manually to render it as Markdown.
             api_key = self._get_api_key()
+            if not api_key:
+                self._print_error(
+                    "No API key found. Please configure an API provider or use Ollama."
+                )
+                return 1
             provider = self._get_provider()
             handler = AskHandler(api_key=api_key, provider=provider)
             answer = handler.ask(question)
@@ -410,6 +415,11 @@ class CortexCLI:
 
             # Capture and render the recommendation response as Markdown using Rich.
             api_key = self._get_api_key()
+            if not api_key:
+                self._print_error(
+                    "No API key found. Please configure an API provider or use Ollama."
+                )
+                return 1
             provider = self._get_provider()
             handler = AskHandler(api_key=api_key, provider=provider)
             rec_answer = handler.ask(rec_question)
