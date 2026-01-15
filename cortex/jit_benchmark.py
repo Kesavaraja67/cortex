@@ -3,7 +3,6 @@
 This module provides comprehensive performance benchmarking for Python 3.13+
 experimental JIT compilation. It measures CLI startup, command parsing,
 cache operations, and response streaming performance.
-
 """
 
 import json
@@ -14,12 +13,25 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any
 
 from rich.console import Console
 from rich.table import Table
 
 console = Console()
+
+SLOW_BENCHMARK_THRESHOLD_S = 0.01
+SIGNIFICANT_IMPROVEMENT_THRESHOLD_PERCENT = 5.0
+
+
+def format_benchmark_time(seconds: float) -> str:
+    """Utility to format time units consistently across the module."""
+    if seconds >= 1.0:
+        return f"{seconds:.4f}s"
+    elif seconds >= 0.001:
+        return f"{seconds * 1000:.2f}ms"
+    else:
+        return f"{seconds * 1_000_000:.2f}μs"
 
 
 class BenchmarkCategory(Enum):
@@ -81,7 +93,6 @@ class JITBenchmark:
 
     def __init__(self, iterations: int = 100):
         """Initialize benchmarker.
-
         Args:
             iterations: Number of times to run each benchmark.
         """
@@ -91,7 +102,6 @@ class JITBenchmark:
 
     def _detect_jit(self) -> bool:
         """Detect if Python JIT is enabled.
-
         Returns:
             True if JIT is enabled, False otherwise.
         """
@@ -100,45 +110,33 @@ class JITBenchmark:
 
     def _format_time(self, seconds: float) -> str:
         """Format time in appropriate unit.
-
         Args:
             seconds: Time in seconds.
-
         Returns:
             Formatted time string.
         """
-        if seconds >= 1.0:
-            return f"{seconds:.4f}s"
-        elif seconds >= 0.001:
-            return f"{seconds * 1000:.2f}ms"
-        else:
-            return f"{seconds * 1_000_000:.2f}μs"
+        return format_benchmark_time(seconds)
 
     def _run_benchmark(
         self, func: Callable, name: str, category: BenchmarkCategory
     ) -> BenchmarkResult:
         """Run a single benchmark.
-
         Args:
             func: Function to benchmark.
             name: Name of the benchmark.
             category: Category of the benchmark.
-
         Returns:
             BenchmarkResult with timing statistics.
         """
         times = []
-
         # Warmup run
         func()
-
         # Actual benchmark runs
         for _ in range(self.iterations):
             start = time.perf_counter()
             func()
             end = time.perf_counter()
             times.append(end - start)
-
         return BenchmarkResult(
             name=name,
             category=category,
@@ -170,7 +168,6 @@ class JITBenchmark:
             "search python3-pip",
             "remove old-package",
         ]
-
         for cmd in commands:
             parts = cmd.split()
             action = parts[0] if parts else ""
@@ -182,11 +179,9 @@ class JITBenchmark:
         """Benchmark cache read/write operations."""
         # Simulate cache operations
         cache_data = {f"key_{i}": f"value_{i}" * 10 for i in range(100)}
-
         # Write
         for key, value in cache_data.items():
             _ = json.dumps({key: value})
-
         # Read
         for key in cache_data:
             _ = cache_data.get(key)
@@ -197,14 +192,12 @@ class JITBenchmark:
         response = "This is a test response " * 100
         chunk_size = 50
         chunks = [response[i : i + chunk_size] for i in range(0, len(response), chunk_size)]
-
         for chunk in chunks:
             # Simulate chunk processing
             _ = chunk.upper().lower()
 
     def run_all_benchmarks(self) -> list[BenchmarkResult]:
         """Run all benchmarks.
-
         Returns:
             List of BenchmarkResult objects.
         """
@@ -214,22 +207,17 @@ class JITBenchmark:
             ("Cache Operations", BenchmarkCategory.CACHE, self._bench_cache_operations),
             ("Response Streaming", BenchmarkCategory.STREAMING, self._bench_response_streaming),
         ]
-
         self.results = []
-
         for name, category, func in benchmarks:
             console.print(f"[cyan]Benchmarking {name}...[/cyan]")
             result = self._run_benchmark(func, name, category)
             self.results.append(result)
-
         return self.results
 
     def run_benchmark(self, benchmark_name: str) -> BenchmarkResult | None:
         """Run a specific benchmark.
-
         Args:
             benchmark_name: Name of benchmark to run.
-
         Returns:
             BenchmarkResult or None if not found.
         """
@@ -243,10 +231,8 @@ class JITBenchmark:
                 self._bench_response_streaming,
             ),
         }
-
         if benchmark_name not in benchmark_map:
             return None
-
         name, category, func = benchmark_map[benchmark_name]
         console.print(f"[cyan]Benchmarking {name}...[/cyan]")
         result = self._run_benchmark(func, name, category)
@@ -255,7 +241,6 @@ class JITBenchmark:
 
     def list_benchmarks(self) -> list[str]:
         """List available benchmarks.
-
         Returns:
             List of benchmark names.
         """
@@ -266,7 +251,6 @@ class JITBenchmark:
         if not self.results:
             console.print("[yellow]No benchmark results to display[/yellow]")
             return
-
         table = Table(
             title="Cortex JIT Benchmark Results", show_header=True, header_style="bold cyan"
         )
@@ -276,7 +260,6 @@ class JITBenchmark:
         table.add_column("Std Dev", justify="right")
         table.add_column("Min", justify="right")
         table.add_column("Max", justify="right")
-
         for result in self.results:
             table.add_row(
                 result.name,
@@ -286,7 +269,6 @@ class JITBenchmark:
                 self._format_time(result.min_time),
                 self._format_time(result.max_time),
             )
-
         console.print()
         console.print(table)
         console.print()
@@ -295,7 +277,6 @@ class JITBenchmark:
 
     def export_json(self, filepath: str) -> None:
         """Export results to JSON file.
-
         Args:
             filepath: Path to output JSON file.
         """
@@ -308,19 +289,15 @@ class JITBenchmark:
             },
             "results": [r.to_dict() for r in self.results],
         }
-
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
-
         console.print(f"[green]✓[/green] Results exported to {filepath}")
 
     def generate_recommendations(self) -> None:
         """Generate performance recommendations based on results."""
         if not self.results:
             return
-
         console.print("\n[bold]Recommendations:[/bold]")
-
         if self.jit_enabled:
             console.print("[green]✓[/green] JIT compilation is enabled - performance gains active")
         else:
@@ -332,9 +309,8 @@ class JITBenchmark:
                 console.print(
                     "[yellow]ℹ[/yellow] Upgrade to Python 3.13+ for JIT compilation support"
                 )
-
         # Analyze results
-        slow_benchmarks = [r for r in self.results if r.mean > 0.01]  # > 10ms
+        slow_benchmarks = [r for r in self.results if r.mean > SLOW_BENCHMARK_THRESHOLD_S]  # > 10ms
         if slow_benchmarks:
             console.print(
                 f"\n[yellow]Performance hotspots detected in {len(slow_benchmarks)} operation(s):[/yellow]"
@@ -345,17 +321,14 @@ class JITBenchmark:
 
 def compare_results(baseline_file: str, jit_file: str) -> None:
     """Compare benchmark results between baseline and JIT.
-
     Args:
         baseline_file: Path to baseline JSON results.
         jit_file: Path to JIT-enabled JSON results.
     """
     with open(baseline_file, encoding="utf-8") as f:
         baseline_data = json.load(f)
-
     with open(jit_file, encoding="utf-8") as f:
         jit_data = json.load(f)
-
     # Create comparison table
     table = Table(title="JIT Performance Comparison", show_header=True, header_style="bold cyan")
     table.add_column("Benchmark", style="green")
@@ -363,22 +336,16 @@ def compare_results(baseline_file: str, jit_file: str) -> None:
     table.add_column("With JIT", justify="right")
     table.add_column("Speedup", justify="right")
     table.add_column("Improvement", justify="right")
-
     comparisons: list[BenchmarkComparison] = []
-
-    baseline_results = {r["name"]: r for r in baseline_data["results"]}
-    jit_results = {r["name"]: r for r in jit_data["results"]}
-
+    baseline_results = {r["name"]: r for r in baseline_data.get("results", [])}
+    jit_results = {r["name"]: r for r in jit_data.get("results", [])}
     for name in baseline_results:
         if name not in jit_results:
             continue
-
         baseline_time = baseline_results[name]["mean"]
         jit_time = jit_results[name]["mean"]
-
         speedup = baseline_time / jit_time if jit_time > 0 else 0
         improvement = ((baseline_time - jit_time) / baseline_time * 100) if baseline_time > 0 else 0
-
         comp = BenchmarkComparison(
             name=name,
             baseline_time=baseline_time,
@@ -387,33 +354,24 @@ def compare_results(baseline_file: str, jit_file: str) -> None:
             percent_improvement=improvement,
         )
         comparisons.append(comp)
-
-        # Format times
-        def fmt(t):
-            if t >= 1.0:
-                return f"{t:.4f}s"
-            elif t >= 0.001:
-                return f"{t * 1000:.2f}ms"
-            else:
-                return f"{t * 1_000_000:.2f}μs"
-
         speedup_str = f"{speedup:.2f}x" if speedup > 0 else "N/A"
-
         improvement_color = "green" if improvement > 0 else "red"
         improvement_str = f"[{improvement_color}]{improvement:+.1f}%[/{improvement_color}]"
-
-        table.add_row(name, fmt(baseline_time), fmt(jit_time), speedup_str, improvement_str)
-
+        table.add_row(
+            name,
+            format_benchmark_time(baseline_time),
+            format_benchmark_time(jit_time),
+            speedup_str,
+            improvement_str,
+        )
     console.print()
     console.print(table)
-
     # Summary
     if comparisons:
         avg_improvement = statistics.mean([c.percent_improvement for c in comparisons])
         console.print()
         console.print(f"[bold]Average Performance Change:[/bold] {avg_improvement:+.1f}%")
-
-        if avg_improvement > 5:
+        if avg_improvement > SIGNIFICANT_IMPROVEMENT_THRESHOLD_PERCENT:
             console.print("[green]✓ JIT provides significant performance benefit[/green]")
         elif avg_improvement > 0:
             console.print("[yellow]ℹ JIT provides modest performance benefit[/yellow]")
@@ -427,20 +385,16 @@ def show_jit_info() -> None:
     console.print(
         f"Python version: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     )
-
     jit_available = sys.version_info >= (3, 13)
     jit_enabled = os.environ.get("PYTHON_JIT", "0") == "1"
-
     if jit_available:
         console.print("[green]✓[/green] JIT compilation available (Python 3.13+)")
     else:
         console.print("[yellow]✗[/yellow] JIT compilation not available (requires Python 3.13+)")
-
     if jit_enabled:
         console.print("[green]✓[/green] JIT compilation is ENABLED")
     else:
         console.print("[yellow]✗[/yellow] JIT compilation is DISABLED")
-
     if jit_available and not jit_enabled:
         console.print("\n[dim]To enable JIT: export PYTHON_JIT=1[/dim]")
         console.print("[dim]Then run benchmarks again to compare[/dim]")
@@ -455,7 +409,6 @@ def run_jit_benchmark(
     compare_jit: str | None = None,
 ) -> int:
     """Run JIT benchmarking suite.
-
     Args:
         action: Action to perform (run, list, info).
         benchmark_name: Specific benchmark to run (None for all).
@@ -463,63 +416,55 @@ def run_jit_benchmark(
         output: Output file for JSON export.
         compare_baseline: Baseline results file for comparison.
         compare_jit: JIT results file for comparison.
-
     Returns:
         Exit code (0 for success, 1 for error).
     """
     if action == "info":
         show_jit_info()
         return 0
-
     if action == "compare":
-        if not compare_baseline or not compare_jit:
-            console.print("[red]Error: --compare requires both --baseline and --jit files[/red]")
-            return 1
-
-        try:
-            compare_results(compare_baseline, compare_jit)
-            return 0
-        except FileNotFoundError as e:
-            console.print(f"[red]Error: {e}[/red]")
-            return 1
-        except json.JSONDecodeError as e:
-            console.print(f"[red]Error parsing JSON: {e}[/red]")
-            return 1
-
-    benchmarker = JITBenchmark(iterations=iterations)
-
+        return _handle_compare_action(compare_baseline, compare_jit)
     if action == "list":
-        console.print("\n[bold cyan]Available Benchmarks:[/bold cyan]")
-        for bench in benchmarker.list_benchmarks():
-            console.print(f"  • {bench}")
-        console.print("\n[dim]Run: cortex jit-benchmark -b <name>[/dim]")
-        return 0
+        return _handle_list_action()
+    return _execute_benchmark_run(iterations, benchmark_name, output)
 
-    # Run benchmarks
+
+def _handle_compare_action(baseline: str | None, jit: str | None) -> int:
+    if not baseline or not jit:
+        console.print("[red]Error: --compare requires both --baseline and --jit files[/red]")
+        return 1
+    try:
+        compare_results(baseline, jit)
+        return 0
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        console.print(f"[red]Error: {e}[/red]")
+        return 1
+
+
+def _handle_list_action() -> int:
+    benchmarker = JITBenchmark()
+    console.print("\n[bold cyan]Available Benchmarks:[/bold cyan]")
+    for bench in benchmarker.list_benchmarks():
+        console.print(f"  • {bench}")
+    return 0
+
+
+def _execute_benchmark_run(iterations: int, name: str | None, output: str | None) -> int:
+    benchmarker = JITBenchmark(iterations=iterations)
     console.print(
         f"\n[bold cyan]Running Cortex JIT Benchmarks[/bold cyan] ({iterations} iterations)"
     )
     console.print(f"Python {sys.version_info.major}.{sys.version_info.minor} | ", end="")
-    console.print(f"JIT: {'Enabled' if benchmarker.jit_enabled else 'Disabled'}")
-    console.print()
-
-    if benchmark_name:
-        result = benchmarker.run_benchmark(benchmark_name)
+    console.print(f"JIT: {'Enabled' if benchmarker.jit_enabled else 'Disabled'}\n")
+    if name:
+        result = benchmarker.run_benchmark(name)
         if not result:
-            console.print(f"[red]Error: Unknown benchmark '{benchmark_name}'[/red]")
-            console.print("Run 'cortex jit-benchmark list' to see available benchmarks")
+            console.print(f"[red]Error: Unknown benchmark '{name}'[/red]")
             return 1
     else:
         benchmarker.run_all_benchmarks()
-
-    # Display results
     benchmarker.display_results()
-
-    # Generate recommendations
     benchmarker.generate_recommendations()
-
-    # Export if requested
     if output:
         benchmarker.export_json(output)
-
     return 0

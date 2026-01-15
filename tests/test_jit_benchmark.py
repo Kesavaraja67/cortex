@@ -6,6 +6,7 @@ import tempfile
 from unittest.mock import patch
 
 import pytest
+from pytest import approx
 
 from cortex.jit_benchmark import (
     BenchmarkCategory,
@@ -39,7 +40,7 @@ class TestBenchmarkResult:
 
         assert data["name"] == "Test Benchmark"
         assert data["category"] == "startup"
-        assert data["mean"] == 0.001
+        assert data["mean"] == approx(0.001)
         assert data["jit_enabled"] is True
 
 
