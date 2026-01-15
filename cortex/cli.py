@@ -2669,6 +2669,13 @@ def main():
     )
     # --------------------------
 
+    # License and upgrade commands
+    subparsers.add_parser("upgrade", help="Upgrade to Cortex Pro")
+    subparsers.add_parser("license", help="Show license status")
+
+    activate_parser = subparsers.add_parser("activate", help="Activate a license key")
+    activate_parser.add_argument("license_key", help="Your license key")
+
     args = parser.parse_args()
 
     # The Guard: Check for empty commands before starting the CLI
@@ -2723,6 +2730,17 @@ def main():
             return 1
         elif args.command == "env":
             return cli.env(args)
+        elif args.command == "upgrade":
+            from cortex.licensing import open_upgrade_page
+            open_upgrade_page()
+            return 0
+        elif args.command == "license":
+            from cortex.licensing import show_license_status
+            show_license_status()
+            return 0
+        elif args.command == "activate":
+            from cortex.licensing import activate_license
+            return 0 if activate_license(args.license_key) else 1
         else:
             parser.print_help()
             return 1
